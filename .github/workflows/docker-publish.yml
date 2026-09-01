@@ -21,8 +21,8 @@ on:
         type: string
       tag_suffixes:
         description: >-
-          Newline-separated tags applied to every image in every registry, e.g.
-          "abc1234\nlatest". Blank lines are ignored.
+          Newline-separated tags applied to every image, e.g. "abc1234\nlatest".
+          Blank lines are ignored.
         required: true
         type: string
       arches:
@@ -40,11 +40,6 @@ on:
       build_timeout_minutes:
         type: number
         default: 90
-    secrets:
-      DOCKERHUB_USERNAME:
-        required: true
-      DOCKERHUB_TOKEN:
-        required: true
 
 permissions:
   contents: read
@@ -81,12 +76,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Prepare environment
         run: cp .env.example .env
 
@@ -115,7 +104,7 @@ jobs:
           target: ${{ matrix.image.target }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ matrix.image.image_name }}:buildcache-${{ matrix.arch }}
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ matrix.image.image_name }}:buildcache-${{ matrix.arch }},mode=max
-          outputs: type=image,"name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image.image_name }},docker.io/${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image.image_name }}",push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,"name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image.image_name }}",push-by-digest=true,name-canonical=true,push=true
           build-args: |
             BUILD_COMMIT=${{ env.BUILD_COMMIT }}
             BUILD_BRANCH=${{ env.BUILD_BRANCH }}
@@ -180,19 +169,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # The digests are identical across registries (manifests are content-addressed),
-      # so the same set sources both manifest lists.
+      # Digests are content-addressed, so the manifest list references the
+      # exact digests the build legs pushed.
       - name: Create manifest lists and push
         working-directory: /tmp/digests
         env:
           GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image.image_name }}
-          DOCKERHUB_IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image.image_name }}
           EXPECTED_ARCHES: ${{ join(fromJSON(inputs.arches), ' ') }}
           TAG_SUFFIXES: ${{ inputs.tag_suffixes }}
         run: |
@@ -220,12 +202,10 @@ jobs:
             exit 1
           fi
 
-          echo "Merging ${#digests[@]} digests into $(( ${#tag_args[@]} / 2 )) tag(s) per registry"
-          for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
-            docker buildx imagetools create \
-              "${tag_args[@]/IMAGE:/${image}:}" \
-              "${digests[@]/#/${image}@sha256:}"
-          done
+          echo "Merging ${#digests[@]} digests into $(( ${#tag_args[@]} / 2 )) tag(s)"
+          docker buildx imagetools create \
+            "${tag_args[@]/IMAGE:/${GHCR_IMAGE}:}" \
+            "${digests[@]/#/${GHCR_IMAGE}@sha256:}"
 
       - name: Inspect image
         env:

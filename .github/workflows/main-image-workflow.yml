@@ -54,6 +54,3 @@ jobs:
         latest
       checkout_ref: ${{ needs.resolve-tag.outputs.sha }}
       build_branch: main
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
